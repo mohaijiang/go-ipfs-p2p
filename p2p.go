@@ -22,6 +22,10 @@ import (
 	rhost "github.com/libp2p/go-libp2p/p2p/host/routed"
 	ma "github.com/multiformats/go-multiaddr"
 	madns "github.com/multiformats/go-multiaddr-dns"
+	"github.com/samber/lo"
+	"math/rand"
+	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -409,4 +413,91 @@ func parseIpfsAddr(addr string) (*peer.AddrInfo, error) {
 		info.Addrs = append(info.Addrs, taddr)
 	}
 	return &info, nil
+}
+
+func (s *P2pClient) ForwardWithRandomPort(peerId string) (string, string, error) {
+	list, err := s.ListListen()
+	if err != nil {
+		fmt.Println("创建容器部署指令失败")
+		fmt.Println("查询p2p 列表失败")
+		return "", "", nil
+	}
+
+	t, find := lo.Find(list, func(item *ListenReply) bool {
+		if item == nil {
+			return false
+		}
+		return item.TargetAddress == fmt.Sprintf("/p2p/%s", peerId)
+	})
+
+	if find {
+		listenAddress := t.ListenAddress
+		// 定义正则表达式模式，用于匹配IP地址和端口号
+		pattern := `\/ip4\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\/tcp\/([0-9]+)`
+
+		// 编译正则表达式
+		regex := regexp.MustCompile(pattern)
+
+		// 使用正则表达式来提取IP地址和端口号
+		matches := regex.FindStringSubmatch(listenAddress)
+		if len(matches) >= 3 {
+			ip := matches[1]   // 第一个匹配组为IP地址
+			port := matches[2] // 第二个匹配组为端口号
+
+			fmt.Printf("IP地址: %s\n", ip)
+			fmt.Printf("端口号: %s\n", port)
+			return ip, port, nil
+		} else {
+			fmt.Println("无法提取IP地址和端口号")
+		}
+	}
+
+	listenIp := "127.0.0.1"
+	listenPort := rand.Intn(9999) + 30000
+
+	if err != nil {
+		return "", "", nil
+	}
+	targetOpt := fmt.Sprintf("/p2p/%s", peerId)
+	proto := "/x/ssh"
+
+	err = s.Forward(proto, listenPort, targetOpt)
+	if err != nil {
+		fmt.Println("创建容器部署指令失败")
+		fmt.Println(err)
+		return "", "", nil
+	}
+	return listenIp, strconv.Itoa(listenPort), nil
+
+}
+
+func (s *P2pClient) ListListen() ([]*ListenReply, error) {
+	output := []*ListenReply{}
+
+	s.P2P.ListenersLocal.Lock()
+	for _, listener := range s.P2P.ListenersLocal.Listeners {
+		output = append(output, &ListenReply{
+			Protocol:      string(listener.Protocol()),
+			ListenAddress: listener.ListenAddress().String(),
+			TargetAddress: listener.TargetAddress().String(),
+		})
+	}
+	s.P2P.ListenersLocal.Unlock()
+
+	s.P2P.ListenersP2P.Lock()
+	for _, listener := range s.P2P.ListenersP2P.Listeners {
+		output = append(output, &ListenReply{
+			Protocol:      string(listener.Protocol()),
+			ListenAddress: listener.ListenAddress().String(),
+			TargetAddress: listener.TargetAddress().String(),
+		})
+	}
+	s.P2P.ListenersP2P.Unlock()
+	return output, nil
+}
+
+type ListenReply struct {
+	Protocol      string
+	ListenAddress string
+	TargetAddress string
 }
