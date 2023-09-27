@@ -420,7 +420,7 @@ func (s *P2pClient) ForwardWithRandomPort(peerId string) (string, string, error)
 	if err != nil {
 		fmt.Println("创建容器部署指令失败")
 		fmt.Println("查询p2p 列表失败")
-		return "", "", nil
+		return "", "", err
 	}
 
 	t, find := lo.Find(list, func(item *ListenReply) bool {
@@ -456,23 +456,22 @@ func (s *P2pClient) ForwardWithRandomPort(peerId string) (string, string, error)
 	listenPort := rand.Intn(9999) + 30000
 
 	if err != nil {
-		return "", "", nil
+		return "", "", err
 	}
-	targetOpt := fmt.Sprintf("/p2p/%s", peerId)
 	proto := "/x/ssh"
 
-	err = s.Forward(proto, listenPort, targetOpt)
+	err = s.Forward(proto, listenPort, peerId)
 	if err != nil {
 		fmt.Println("创建容器部署指令失败")
 		fmt.Println(err)
-		return "", "", nil
+		return "", "", err
 	}
-	return listenIp, strconv.Itoa(listenPort), nil
+	return listenIp, strconv.Itoa(listenPort), err
 
 }
 
 func (s *P2pClient) ListListen() ([]*ListenReply, error) {
-	output := []*ListenReply{}
+	var output []*ListenReply
 
 	s.P2P.ListenersLocal.Lock()
 	for _, listener := range s.P2P.ListenersLocal.Listeners {
